@@ -18,7 +18,7 @@ If you want to contribute to [oui](https://github.com/zhaojh329/oui), please fol
     ```
     git checkout -b "oui-1-fix"
     ```
-    You can name it however you want.
+    You can name it whatever you want.
 
 4. Make your changes
 

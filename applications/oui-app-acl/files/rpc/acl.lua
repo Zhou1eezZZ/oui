@@ -1,102 +1,48 @@
-local sqlite3 = require "lsqlite3"
-local rpc = require "oui.rpc"
+local file = require 'eco.file'
+local cjson = require 'cjson'
+local rpc = require 'oui.rpc'
 
 local M = {}
 
-function M.groups(params)
-    local db = sqlite3.open("/etc/oui-httpd/oh.db")
+function M.load()
+    local res = {}
 
-    local groups = {}
+    for group, acls in pairs(rpc.get_acls()) do
+        local acl = {}
 
-    for a in db:rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'acl_%'") do
-        local group = a[1]:sub(5)
-        groups[#groups + 1] = group
+        for cls, info in pairs(acls) do
+            acl[#acl + 1] = {
+                cls = cls,
+                matchs = info.matchs,
+                reverse = not not info.reverse
+            }
+        end
+
+        res[group] = acl
     end
 
-    db:close()
-
-    return { groups = groups }
+    return res
 end
 
-function M.add_group(params)
-    local name = params.name
-
-    if type(name) ~= "string" then
-        return rpc.ERROR_CODE_INVALID_PARAMS
+function M.set(params)
+    for name in file.dir('/usr/share/oui/acl') do
+        if name ~= '.' and name ~= '..' then
+            os.remove('/usr/share/oui/acl/' .. name)
+        end
     end
 
-    local db = sqlite3.open("/etc/oui-httpd/oh.db")
-
-    db:exec(string.format("CREATE TABLE IF NOT EXISTS acl_%s(scope TEXT NOT NULL, entry TEXT NOT NULL, perm TEXT NOT NULL)", name))
-
-    db:close()
-end
-
-function M.del_group(params)
-    local name = params.name
-
-    if type(name) ~= "string" then
-        return rpc.ERROR_CODE_INVALID_PARAMS
+    for group, acls in pairs((params.acls)) do
+        local acl = {}
+        for _, info in ipairs(acls) do
+            acl[info.cls] = {
+                matchs = info.matchs,
+                reverse = info.reverse
+            }
+        end
+        file.writefile('/usr/share/oui/acl/' .. group .. '.json', cjson.encode(acl))
     end
 
-    local db = sqlite3.open("/etc/oui-httpd/oh.db")
-
-    db:exec(string.format("DROP TABLE IF EXISTS acl_%s", name))
-
-    db:close()
-end
-
-function M.list(params)
-    local group = params.group
-
-    if type(group) ~= "string" then
-        return rpc.ERROR_CODE_INVALID_PARAMS
-    end
-
-    local db = sqlite3.open("/etc/oui-httpd/oh.db")
-    local sql = string.format("SELECT * FROM acl_%s", group)
-    local acls = {}
-
-    for a in db:nrows(sql) do
-        acls[#acls + 1] = a
-    end
-
-    db:close()
-
-    return { acls = acls }
-end
-
-function M.add(params)
-    local group = params.group
-    local scope = params.scope
-    local entry = params.entry
-    local perm = params.perm
-
-    if type(group) ~= "string" or type(scope) ~= "string" or type(entry) ~= "string" or type(perm) ~= "string" then
-        return rpc.ERROR_CODE_INVALID_PARAMS
-    end
-
-    local db = sqlite3.open("/etc/oui-httpd/oh.db")
-
-    db:exec(string.format("INSERT INTO acl_%s values('%s', '%s', '%s')", group, scope, entry, perm))
-
-    db:close()
-end
-
-function M.del(params)
-    local group = params.group
-    local scope = params.scope
-    local entry = params.entry
-
-    if type(group) ~= "string" or type(scope) ~= "string" or type(entry) ~= "string" then
-        return rpc.ERROR_CODE_INVALID_PARAMS
-    end
-
-    local db = sqlite3.open("/etc/oui-httpd/oh.db")
-
-    db:exec(string.format("DELETE FROM acl_%s WHERE scope = '%s' AND entry = '%s'", group, scope, entry))
-
-    db:close()
+    rpc.load_acl()
 end
 
 return M
